@@ -51,7 +51,123 @@ struct SplashView: View {
     }
 }
 
+struct CameraPreviewView: UIViewRepresentable {
+    @Binding var session: AVCaptureSession
+    
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: UIScreen.main.bounds)
+        view.backgroundColor = .black
+        
+        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
+        previewLayer.frame = view.frame
+        previewLayer.videoGravity = .resizeAspectFill
+        view.layer.addSublayer(previewLayer)
+        
+        return view
+    }
+    
+    func updateUIView(_ uiView: UIView, context: Context) {
+        if let previewLayer = uiView.layer.sublayers?.first as? AVCaptureVideoPreviewLayer {
+            previewLayer.frame = uiView.frame
+        }
+    }
+}
+
+class CameraManager: ObservableObject {
+    @Published var session = AVCaptureSession()
+    @Published var isAuthorized = false
+    @Published var currentPosition: AVCaptureDevice.Position = .back
+    
+    private var videoDeviceInput: AVCaptureDeviceInput?
+    
+    init() {
+        checkPermissions()
+    }
+    
+    func checkPermissions() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            self.isAuthorized = true
+            self.setupCamera()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    self?.isAuthorized = granted
+                    if granted {
+                        self?.setupCamera()
+                    }
+                }
+            }
+        default:
+            self.isAuthorized = false
+        }
+    }
+    
+    func setupCamera() {
+        session.beginConfiguration()
+        
+        // Add video input
+        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera,
+                                                       for: .video,
+                                                       position: currentPosition) else {
+            session.commitConfiguration()
+            return
+        }
+        
+        do {
+            let videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
+            if session.canAddInput(videoDeviceInput) {
+                session.addInput(videoDeviceInput)
+                self.videoDeviceInput = videoDeviceInput
+            }
+        } catch {
+            print("Error setting up camera: \(error.localizedDescription)")
+            session.commitConfiguration()
+            return
+        }
+        
+        session.commitConfiguration()
+        
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.session.startRunning()
+        }
+    }
+    
+    func switchCamera() {
+        session.beginConfiguration()
+        
+        // Remove existing input
+        if let currentInput = videoDeviceInput {
+            session.removeInput(currentInput)
+        }
+        
+        // Switch camera position
+        currentPosition = currentPosition == .back ? .front : .back
+        
+        // Add new input
+        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera,
+                                                       for: .video,
+                                                       position: currentPosition) else {
+            session.commitConfiguration()
+            return
+        }
+        
+        do {
+            let videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
+            if session.canAddInput(videoDeviceInput) {
+                session.addInput(videoDeviceInput)
+                self.videoDeviceInput = videoDeviceInput
+            }
+        } catch {
+            print("Error switching camera: \(error.localizedDescription)")
+        }
+        
+        session.commitConfiguration()
+    }
+}
+
 struct CameraView: View {
+    @StateObject private var cameraManager = CameraManager()
     @State private var showImagePicker = false
     @State private var showPreview = false
     @State private var capturedImage: UIImage?
@@ -62,32 +178,42 @@ struct CameraView: View {
     
     var body: some View {
         ZStack {
-            // Camera preview will go here
-            Color.black.edgesIgnoringSafeArea(.all)
-            
-            VStack {
-                Spacer()
+            if cameraManager.isAuthorized {
+                CameraPreviewView(session: $cameraManager.session)
+                    .edgesIgnoringSafeArea(.all)
                 
-                HStack(spacing: 20) {
-                    Button(action: { showImagePicker = true }) {
-                        Image(systemName: "photo.on.rectangle")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white)
-                    }
+                VStack {
+                    Spacer()
                     
-                    Button(action: { /* Capture photo */ }) {
-                        Circle()
-                            .fill(Color.white)
-                            .frame(width: 70, height: 70)
+                    HStack(spacing: 20) {
+                        Button(action: { showImagePicker = true }) {
+                            Image(systemName: "photo.on.rectangle")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white)
+                        }
+                        
+                        Button(action: { /* Capture photo */ }) {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 70, height: 70)
+                        }
+                        
+                        Button(action: { cameraManager.switchCamera() }) {
+                            Image(systemName: "camera.rotate")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white)
+                        }
                     }
-                    
-                    Button(action: { /* Switch camera */ }) {
-                        Image(systemName: "camera.rotate")
-                            .font(.system(size: 24))
-                            .foregroundColor(.white)
-                    }
+                    .padding(.bottom, 30)
                 }
-                .padding(.bottom, 30)
+            } else {
+                VStack {
+                    Text("Camera access is required")
+                        .font(.headline)
+                    Text("Please enable camera access in Settings")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
             }
         }
         .sheet(isPresented: $showImagePicker) {

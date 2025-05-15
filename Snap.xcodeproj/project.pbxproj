@@ -399,6 +399,8 @@
 				DEVELOPMENT_TEAM = 4P8TFG9TMY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "BaseweightSnap needs camera access to take photos for image analysis and description generation.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "BaseweightSnap needs photo library access to select images for analysis and description generation.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -428,6 +430,8 @@
 				DEVELOPMENT_TEAM = 4P8TFG9TMY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "BaseweightSnap needs camera access to take photos for image analysis and description generation.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "BaseweightSnap needs photo library access to select images for analysis and description generation.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
