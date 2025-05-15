@@ -52,117 +52,229 @@ struct SplashView: View {
 }
 
 struct CameraPreviewView: UIViewRepresentable {
-    @Binding var session: AVCaptureSession
+    let session: AVCaptureSession
+    @Binding var isConfigured: Bool
     
     func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: UIScreen.main.bounds)
+        print("Creating preview view")
+        let view = UIView()
         view.backgroundColor = .black
         
         let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-        previewLayer.frame = view.frame
         previewLayer.videoGravity = .resizeAspectFill
         view.layer.addSublayer(previewLayer)
         
+        print("Preview layer added to view")
         return view
     }
     
     func updateUIView(_ uiView: UIView, context: Context) {
+        print("Updating preview view")
         if let previewLayer = uiView.layer.sublayers?.first as? AVCaptureVideoPreviewLayer {
-            previewLayer.frame = uiView.frame
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(0)
+            previewLayer.frame = uiView.bounds
+            CATransaction.commit()
+            print("Preview layer frame updated: \(uiView.bounds)")
         }
     }
 }
 
-class CameraManager: ObservableObject {
+class CameraManager: NSObject, ObservableObject {
     @Published var session = AVCaptureSession()
     @Published var isAuthorized = false
     @Published var currentPosition: AVCaptureDevice.Position = .back
+    @Published var capturedImage: UIImage?
+    @Published var isConfigured = false
     
     private var videoDeviceInput: AVCaptureDeviceInput?
+    private let photoOutput = AVCapturePhotoOutput()
+    private let sessionQueue = DispatchQueue(label: "sessionQueue")
     
-    init() {
+    override init() {
+        super.init()
+        print("CameraManager initialized")
         checkPermissions()
     }
     
     func checkPermissions() {
+        print("Checking camera permissions")
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            self.isAuthorized = true
-            self.setupCamera()
+            print("Camera authorized")
+            DispatchQueue.main.async {
+                self.isAuthorized = true
+            }
         case .notDetermined:
+            print("Requesting camera authorization")
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                print("Camera authorization response: \(granted)")
                 DispatchQueue.main.async {
                     self?.isAuthorized = granted
-                    if granted {
-                        self?.setupCamera()
-                    }
                 }
             }
         default:
-            self.isAuthorized = false
+            print("Camera not authorized")
+            DispatchQueue.main.async {
+                self.isAuthorized = false
+            }
         }
     }
     
-    func setupCamera() {
-        session.beginConfiguration()
-        
-        // Add video input
-        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera,
-                                                       for: .video,
-                                                       position: currentPosition) else {
-            session.commitConfiguration()
-            return
-        }
-        
-        do {
-            let videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
-            if session.canAddInput(videoDeviceInput) {
-                session.addInput(videoDeviceInput)
-                self.videoDeviceInput = videoDeviceInput
+    func configure() {
+        guard !isConfigured else { return }
+        print("Configuring camera")
+        setupCamera()
+    }
+    
+    private func setupCamera() {
+        print("Setting up camera")
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            print("Starting camera configuration")
+            self.session.beginConfiguration()
+            
+            // Remove existing inputs and outputs
+            self.session.inputs.forEach { self.session.removeInput($0) }
+            self.session.outputs.forEach { self.session.removeOutput($0) }
+            
+            // Configure video input
+            guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera,
+                                                           for: .video,
+                                                           position: self.currentPosition) else {
+                print("Failed to get video device")
+                self.session.commitConfiguration()
+                return
             }
-        } catch {
-            print("Error setting up camera: \(error.localizedDescription)")
-            session.commitConfiguration()
-            return
+            
+            print("Got video device: \(videoDevice.localizedName)")
+            
+            do {
+                let videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
+                if self.session.canAddInput(videoDeviceInput) {
+                    self.session.addInput(videoDeviceInput)
+                    self.videoDeviceInput = videoDeviceInput
+                    print("Added video input")
+                } else {
+                    print("Could not add video input")
+                }
+                
+                // Configure photo output
+                if self.session.canAddOutput(self.photoOutput) {
+                    self.session.addOutput(self.photoOutput)
+                    self.photoOutput.isHighResolutionCaptureEnabled = true
+                    self.photoOutput.maxPhotoQualityPrioritization = .quality
+                    print("Added photo output")
+                } else {
+                    print("Could not add photo output")
+                }
+            } catch {
+                print("Error setting up camera: \(error.localizedDescription)")
+                self.session.commitConfiguration()
+                return
+            }
+            
+            self.session.commitConfiguration()
+            print("Camera configuration committed")
+            
+            DispatchQueue.main.async {
+                self.isConfigured = true
+            }
         }
-        
-        session.commitConfiguration()
-        
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+    }
+    
+    func startSession() {
+        guard !session.isRunning else { return }
+        sessionQueue.async { [weak self] in
+            print("Starting capture session")
             self?.session.startRunning()
+            print("Capture session running: \(self?.session.isRunning ?? false)")
+        }
+    }
+    
+    func stopSession() {
+        guard session.isRunning else { return }
+        sessionQueue.async { [weak self] in
+            print("Stopping capture session")
+            self?.session.stopRunning()
         }
     }
     
     func switchCamera() {
-        session.beginConfiguration()
-        
-        // Remove existing input
-        if let currentInput = videoDeviceInput {
-            session.removeInput(currentInput)
+        print("Switching camera")
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            let newPosition = self.currentPosition == .back ? AVCaptureDevice.Position.front : AVCaptureDevice.Position.back
+            print("Switching to camera position: \(newPosition == .front ? "front" : "back")")
+            
+            self.session.beginConfiguration()
+            
+            // Remove existing input
+            if let currentInput = self.videoDeviceInput {
+                self.session.removeInput(currentInput)
+                print("Removed existing input")
+            }
+            
+            // Configure new input
+            guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera,
+                                                           for: .video,
+                                                           position: newPosition) else {
+                print("Failed to get video device for new position")
+                self.session.commitConfiguration()
+                return
+            }
+            
+            do {
+                let videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
+                if self.session.canAddInput(videoDeviceInput) {
+                    self.session.addInput(videoDeviceInput)
+                    self.videoDeviceInput = videoDeviceInput
+                    print("Added new video input")
+                } else {
+                    print("Could not add new video input")
+                }
+            } catch {
+                print("Error switching camera: \(error.localizedDescription)")
+            }
+            
+            self.session.commitConfiguration()
+            print("Camera switch configuration committed")
+            
+            DispatchQueue.main.async {
+                self.currentPosition = newPosition
+            }
         }
-        
-        // Switch camera position
-        currentPosition = currentPosition == .back ? .front : .back
-        
-        // Add new input
-        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera,
-                                                       for: .video,
-                                                       position: currentPosition) else {
-            session.commitConfiguration()
+    }
+    
+    func capturePhoto() {
+        print("Capturing photo")
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            let settings = AVCapturePhotoSettings()
+            self.photoOutput.capturePhoto(with: settings, delegate: self)
+        }
+    }
+}
+
+extension CameraManager: AVCapturePhotoCaptureDelegate {
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        if let error = error {
+            print("Error capturing photo: \(error.localizedDescription)")
             return
         }
         
-        do {
-            let videoDeviceInput = try AVCaptureDeviceInput(device: videoDevice)
-            if session.canAddInput(videoDeviceInput) {
-                session.addInput(videoDeviceInput)
-                self.videoDeviceInput = videoDeviceInput
-            }
-        } catch {
-            print("Error switching camera: \(error.localizedDescription)")
+        guard let imageData = photo.fileDataRepresentation(),
+              let image = UIImage(data: imageData) else {
+            print("Error converting photo data to image")
+            return
         }
         
-        session.commitConfiguration()
+        print("Photo captured successfully")
+        DispatchQueue.main.async { [weak self] in
+            self?.capturedImage = image
+        }
     }
 }
 
@@ -170,57 +282,75 @@ struct CameraView: View {
     @StateObject private var cameraManager = CameraManager()
     @State private var showImagePicker = false
     @State private var showPreview = false
-    @State private var capturedImage: UIImage?
     @State private var isShowingTextInput = false
     @State private var inputText = ""
     @State private var showResponse = false
     @State private var responseText = ""
     
     var body: some View {
-        ZStack {
-            if cameraManager.isAuthorized {
-                CameraPreviewView(session: $cameraManager.session)
-                    .edgesIgnoringSafeArea(.all)
-                
-                VStack {
-                    Spacer()
+        GeometryReader { geometry in
+            ZStack {
+                if cameraManager.isAuthorized {
+                    CameraPreviewView(session: cameraManager.session, isConfigured: $cameraManager.isConfigured)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .edgesIgnoringSafeArea(.all)
+                        .onAppear {
+                            print("Camera preview appeared")
+                            cameraManager.configure()
+                            cameraManager.startSession()
+                        }
+                        .onDisappear {
+                            print("Camera preview disappeared")
+                            cameraManager.stopSession()
+                        }
                     
-                    HStack(spacing: 20) {
-                        Button(action: { showImagePicker = true }) {
-                            Image(systemName: "photo.on.rectangle")
-                                .font(.system(size: 24))
-                                .foregroundColor(.white)
-                        }
+                    VStack {
+                        Spacer()
                         
-                        Button(action: { /* Capture photo */ }) {
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 70, height: 70)
+                        HStack(spacing: 20) {
+                            Button(action: { showImagePicker = true }) {
+                                Image(systemName: "photo.on.rectangle")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(.white)
+                            }
+                            
+                            Button(action: {
+                                cameraManager.capturePhoto()
+                            }) {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 70, height: 70)
+                            }
+                            
+                            Button(action: { cameraManager.switchCamera() }) {
+                                Image(systemName: "camera.rotate")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(.white)
+                            }
                         }
-                        
-                        Button(action: { cameraManager.switchCamera() }) {
-                            Image(systemName: "camera.rotate")
-                                .font(.system(size: 24))
-                                .foregroundColor(.white)
-                        }
+                        .padding(.bottom, 30)
                     }
-                    .padding(.bottom, 30)
-                }
-            } else {
-                VStack {
-                    Text("Camera access is required")
-                        .font(.headline)
-                    Text("Please enable camera access in Settings")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                } else {
+                    VStack {
+                        Text("Camera access is required")
+                            .font(.headline)
+                        Text("Please enable camera access in Settings")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
                 }
             }
         }
         .sheet(isPresented: $showImagePicker) {
-            ImagePicker(image: $capturedImage)
+            ImagePicker(image: $cameraManager.capturedImage)
+        }
+        .onChange(of: cameraManager.capturedImage) { newImage in
+            if newImage != nil {
+                showPreview = true
+            }
         }
         .sheet(isPresented: $showPreview) {
-            if let image = capturedImage {
+            if let image = cameraManager.capturedImage {
                 PreviewView(image: image)
             }
         }
