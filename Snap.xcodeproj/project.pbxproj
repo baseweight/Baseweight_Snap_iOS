@@ -195,6 +195,10 @@
 			);
 			mainGroup = B16FC8E02DD63DC600EEFB5B;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B1D6BAE42DD97D2900AAE149 /* XCLocalSwiftPackageReference "LlamaBindings" */,
+				B1D6BAE52DD97D6100AAE149 /* XCRemoteSwiftPackageReference "llama" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B16FC8EA2DD63DC600EEFB5B /* Products */;
 			projectDirPath = "";
@@ -562,6 +566,24 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B1D6BAE42DD97D2900AAE149 /* XCLocalSwiftPackageReference "LlamaBindings" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LlamaBindings;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B1D6BAE52DD97D6100AAE149 /* XCRemoteSwiftPackageReference "llama" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ggerganov/llama.cpp/";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
 	};
 	rootObject = B16FC8E12DD63DC600EEFB5B /* Project object */;
 }

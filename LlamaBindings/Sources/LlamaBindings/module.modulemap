@@ -1,0 +1,10 @@
+module LlamaBindings {
+    umbrella header "LlamaBindings-Bridging-Header.h"
+    
+    module * { export * }
+    
+    module Cxx {
+        header "model_manager.h"
+        requires cplusplus
+    }
+} 
