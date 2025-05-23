@@ -102,8 +102,13 @@ void ModelManager::addBitmap(mtmd::bitmap&& bmp) {
 
 std::string ModelManager::generateResponse(const char* prompt, int max_tokens) {
     std::string result;
+
+    std::string str_prompt(prompt);
+    if(str_prompt.find("<__image__>") == std::string::npos) {
+        str_prompt = " <__image__> " + str_prompt;
+    }
     
-    if (!evalMessage(prompt, true)) {  // Add BOS token for first message
+    if (!evalMessage(str_prompt.c_str(), true)) {  // Add BOS token for first message
         return "Error: Failed to evaluate message";
     }
 
