@@ -11,11 +11,12 @@ import AVFoundation
 struct ContentView: View {
     @State private var isSplashActive = true
     @State private var showCamera = false
+    @StateObject private var modelManager = ModelManager.shared
     
     var body: some View {
         ZStack {
             if isSplashActive {
-                SplashView(isActive: $isSplashActive)
+                SplashView(isActive: $isSplashActive, modelManager: modelManager)
             } else {
                 CameraView()
             }
@@ -25,29 +26,122 @@ struct ContentView: View {
 
 struct SplashView: View {
     @Binding var isActive: Bool
-    @State private var loadingText = "Loading models..."
+    @ObservedObject var modelManager: ModelManager
+    @State private var showCellularWarning = false
+    @State private var showErrorAlert = false
+    @State private var errorMessage = ""
     
     var body: some View {
         VStack {
-            Text("BaseweightSnap")
+            Image("baseweightmascot_white")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 162, height: 235)
+            
+            Text("Baseweight Snap")
                 .font(.largeTitle)
                 .fontWeight(.bold)
             
-            ProgressView()
-                .padding()
+            if modelManager.isDownloading {
+                ProgressView(value: Double(modelManager.downloadProgress?.progress ?? 0), total: 100)
+                    .progressViewStyle(LinearProgressViewStyle())
+                    .frame(width: 200)
+            } else {
+                ProgressView()
+                    .padding()
+            }
             
-            Text(loadingText)
+            Text(modelManager.downloadProgress?.message ?? "Loading models...")
                 .font(.subheadline)
                 .foregroundColor(.gray)
         }
         .onAppear {
-            // Simulate model loading
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                withAnimation {
-                    isActive = false
-                }
+            Task {
+                await checkAndLoadModels()
             }
         }
+        .alert("Error", isPresented: $showErrorAlert) {
+            Button("OK") {
+                // Exit the app
+                exit(0)
+            }
+        } message: {
+            Text(errorMessage)
+        }
+        .alert("Large File Download Warning", isPresented: $showCellularWarning) {
+            Button("Continue") {
+                Task {
+                    await downloadModels()
+                }
+            }
+            Button("Exit", role: .destructive) {
+                exit(0)
+            }
+        } message: {
+            Text("These are large files (total ~2.4GB). Please connect to WiFi for the best experience.\n\nWould you like to continue downloading anyway?")
+        }
+    }
+    
+    private func checkAndLoadModels() async {
+        do {
+            // Check if models are already downloaded
+            let defaultModelName = modelManager.availableModels[0].name
+            let modelsDownloaded = modelManager.isModelPairDownloaded(modelName: defaultModelName)
+            
+            if modelsDownloaded {
+                // Load the downloaded models
+                try await modelManager.loadDownloadedModels()
+                
+                // Only proceed to main screen after models are loaded
+                if modelManager.isModelLoaded {
+                    await MainActor.run {
+                        withAnimation {
+                            isActive = false
+                        }
+                    }
+                } else {
+                    showError("Failed to load models")
+                }
+            } else {
+                // Check if on WiFi
+                let isOnWifi = modelManager.isOnWiFi()
+                if isOnWifi {
+                    await downloadModels()
+                } else {
+                    showCellularWarning = true
+                }
+            }
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+    
+    private func downloadModels() async {
+        do {
+            let defaultModelName = modelManager.availableModels[0].name
+            try await modelManager.downloadModelPair(modelName: defaultModelName)
+            
+            // Models downloaded successfully, now load them
+            try await modelManager.loadModelPair(modelName: defaultModelName)
+            
+            // Only proceed to main screen after models are loaded
+            if modelManager.isModelLoaded {
+                await MainActor.run {
+                    withAnimation {
+                        isActive = false
+                    }
+                }
+            } else {
+                showError("Failed to load models")
+            }
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+    
+    private func showError(_ message: String) {
+        errorMessage = message
+        showErrorAlert = true
     }
 }
 
@@ -395,6 +489,9 @@ struct PreviewView: View {
     @State private var inputText = ""
     @State private var showResponse = false
     @State private var responseText = ""
+    @State private var isGenerating = false
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var modelManager = ModelManager.shared
     
     var body: some View {
         VStack {
@@ -402,21 +499,83 @@ struct PreviewView: View {
                 .resizable()
                 .scaledToFit()
             
+            if showResponse {
+                ScrollView {
+                    Text(responseText)
+                        .padding()
+                }
+                .frame(maxHeight: 200)
+            }
+            
             HStack(spacing: 20) {
                 Button(action: { showTextInput = true }) {
                     Image(systemName: "text.bubble")
                         .font(.system(size: 24))
                 }
                 
-                Button(action: { /* Generate description */ }) {
+                Button(action: { generateDescription() }) {
                     Image(systemName: "text.magnifyingglass")
+                        .font(.system(size: 24))
+                }
+                
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 24))
                 }
             }
             .padding()
+            
+            if isGenerating {
+                ProgressView()
+                    .padding()
+            }
         }
         .sheet(isPresented: $showTextInput) {
-            TextInputView(text: $inputText, isPresented: $showTextInput)
+            TextInputView(text: $inputText, isPresented: $showTextInput, onSubmit: { prompt in
+                generateResponse(prompt: prompt)
+            })
+        }
+    }
+    
+    private func generateDescription() {
+        print("Generating description")
+        generateResponse(prompt: "Can you describe this image")
+    }
+    
+    private func generateResponse(prompt: String) {
+        guard !isGenerating else {
+            print("Already generating response")
+            return
+        }
+        
+        guard modelManager.isModelLoaded else {
+            print("Model not loaded")
+            responseText = "Error: Model not loaded"
+            return
+        }
+        
+        print("Starting response generation with prompt: \(prompt)")
+        isGenerating = true
+        showResponse = true
+        responseText = "Generating response..."
+        
+        Task {
+            do {
+                print("Processing image with prompt")
+                let response = try await modelManager.processImage(image, prompt: prompt)
+                print("Received response: \(response)")
+                
+                await MainActor.run {
+                    responseText = response
+                    isGenerating = false
+                }
+            } catch {
+                print("Error generating response: \(error)")
+                await MainActor.run {
+                    responseText = "Error: \(error.localizedDescription)"
+                    isGenerating = false
+                }
+            }
         }
     }
 }
@@ -424,21 +583,23 @@ struct PreviewView: View {
 struct TextInputView: View {
     @Binding var text: String
     @Binding var isPresented: Bool
+    var onSubmit: (String) -> Void
     
     var body: some View {
         NavigationView {
             VStack {
-                TextField("Enter text...", text: $text)
+                TextField("Enter prompt...", text: $text)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding()
                 
                 Button("Submit") {
-                    // Handle text submission
+                    print("Submitting prompt: \(text)")
+                    onSubmit(text)
                     isPresented = false
                 }
                 .padding()
             }
-            .navigationTitle("Add Text")
+            .navigationTitle("Add Prompt")
             .navigationBarItems(trailing: Button("Cancel") {
                 isPresented = false
             })

@@ -6,6 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B12D72F52DDCE980005C7AA5 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B17869202DDCCF0B000730AF /* llama.xcframework */; };
+		B12D72F62DDCE980005C7AA5 /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B17869202DDCCF0B000730AF /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		B178691D2DDCCE8C000730AF /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B178691C2DDCCE8C000730AF /* Foundation.framework */; };
+		B1A5A98A2DDCC5680075BCBD /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1A5A9892DDCC5680075BCBD /* Accelerate.framework */; };
+		B1A5A98C2DDCC56F0075BCBD /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1A5A98B2DDCC56F0075BCBD /* Metal.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		B16FC8FA2DD63DC700EEFB5B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -23,10 +31,28 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		B1A5A9912DDCC5C60075BCBD /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				B12D72F62DDCE980005C7AA5 /* llama.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		B16FC8E92DD63DC600EEFB5B /* Snap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Snap.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B16FC8F92DD63DC700EEFB5B /* SnapTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SnapTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B16FC9032DD63DC700EEFB5B /* SnapUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SnapUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B178691C2DDCCE8C000730AF /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		B17869202DDCCF0B000730AF /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = llama.xcframework; sourceTree = "<group>"; };
+		B1A5A9892DDCC5680075BCBD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
+		B1A5A98B2DDCC56F0075BCBD /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -52,6 +78,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B178691D2DDCCE8C000730AF /* Foundation.framework in Frameworks */,
+				B1A5A98C2DDCC56F0075BCBD /* Metal.framework in Frameworks */,
+				B1A5A98A2DDCC5680075BCBD /* Accelerate.framework in Frameworks */,
+				B12D72F52DDCE980005C7AA5 /* llama.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +108,7 @@
 				B16FC8EB2DD63DC600EEFB5B /* Snap */,
 				B16FC8FC2DD63DC700EEFB5B /* SnapTests */,
 				B16FC9062DD63DC700EEFB5B /* SnapUITests */,
+				B1A5A9882DDCC5680075BCBD /* Frameworks */,
 				B16FC8EA2DD63DC600EEFB5B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -92,6 +123,17 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		B1A5A9882DDCC5680075BCBD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B178691C2DDCCE8C000730AF /* Foundation.framework */,
+				B1A5A98B2DDCC56F0075BCBD /* Metal.framework */,
+				B1A5A9892DDCC5680075BCBD /* Accelerate.framework */,
+				B17869202DDCCF0B000730AF /* llama.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -102,6 +144,7 @@
 				B16FC8E52DD63DC600EEFB5B /* Sources */,
 				B16FC8E62DD63DC600EEFB5B /* Frameworks */,
 				B16FC8E72DD63DC600EEFB5B /* Resources */,
+				B1A5A9912DDCC5C60075BCBD /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -196,8 +239,6 @@
 			mainGroup = B16FC8E02DD63DC600EEFB5B;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				B1D6BAE42DD97D2900AAE149 /* XCLocalSwiftPackageReference "LlamaBindings" */,
-				B1D6BAE52DD97D6100AAE149 /* XCRemoteSwiftPackageReference "llama" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B16FC8EA2DD63DC600EEFB5B /* Products */;
@@ -402,7 +443,9 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Snap/Preview Content\"";
 				DEVELOPMENT_TEAM = 4P8TFG9TMY;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/llama.xcframework";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "BaseweightSnap needs camera access to take photos for image analysis and description generation.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "BaseweightSnap needs photo library access to select images for analysis and description generation.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -418,6 +461,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = ai.baseweight.Snap;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -433,7 +478,9 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Snap/Preview Content\"";
 				DEVELOPMENT_TEAM = 4P8TFG9TMY;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/llama.xcframework";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "BaseweightSnap needs camera access to take photos for image analysis and description generation.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "BaseweightSnap needs photo library access to select images for analysis and description generation.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -449,6 +496,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = ai.baseweight.Snap;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -566,24 +615,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		B1D6BAE42DD97D2900AAE149 /* XCLocalSwiftPackageReference "LlamaBindings" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = LlamaBindings;
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		B1D6BAE52DD97D6100AAE149 /* XCRemoteSwiftPackageReference "llama" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ggerganov/llama.cpp/";
-			requirement = {
-				branch = master;
-				kind = branch;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
 	};
 	rootObject = B16FC8E12DD63DC600EEFB5B /* Project object */;
 }
