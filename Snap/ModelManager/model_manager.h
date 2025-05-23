@@ -3,11 +3,16 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <os/log.h>
 #include "llama.h"
 #include "mtmd.h"
 #include "chat.h"
 #include "common.h"
 #include "sampling.h"
+
+#define TAG "com.snap.modelmanager"
+#define LOGi(...) os_log(OS_LOG_DEFAULT, __VA_ARGS__)
+#define LOGe(...) os_log_error(OS_LOG_DEFAULT, __VA_ARGS__)
 
 class ModelManager {
 public:
@@ -40,10 +45,10 @@ public:
 
     // Text generation
     std::string generateResponse(const char* prompt, int max_tokens);
-    bool evalMessage(common_chat_msg& msg, bool add_bos = false);
+    bool evalMessage(const char* prompt, bool add_bos = false);
 
     // Getters
-    mtmd_context* getVisionContext() const { return ctx_vision.get(); }
+    mtmd_context* getVisionContext() const { return ctx_vision; }
     llama_context* getLanguageContext() const { return lctx; }
     llama_model* getModel() const { return model; }
     const llama_vocab* getVocab() const { return vocab; }
@@ -61,7 +66,7 @@ private:
     ~ModelManager();
 
     // Vision context
-    mtmd::context_ptr ctx_vision;
+    mtmd_context* ctx_vision = nullptr;
     
     // Language model
     llama_model* model = nullptr;
@@ -81,4 +86,4 @@ private:
     common_chat_templates_ptr tmpls;
     llama_tokens antiprompt_tokens;
     bool checkAntiprompt(const llama_tokens& generated_tokens) const;
-}; 
+};

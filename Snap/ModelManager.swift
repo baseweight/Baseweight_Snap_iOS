@@ -47,7 +47,7 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var currentDownloadBytesReceived: Int64 = 0
     
     private let defaultModelName = "SmolVLM-2.2B-Instruct"
-    private let mtmdManager = MTMDManager.shared
+    private var manager: UnsafeMutableRawPointer?
     
     // List of available models
     let availableModels: [MTMDModelPair] = [
@@ -70,7 +70,7 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         )
     ]
     
-    private override init() {
+    override init() {
         // Get the documents directory
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         modelsDirectory = documentsPath.appendingPathComponent("models")
@@ -82,6 +82,14 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         
         // Check if models are already loaded
         isModelLoaded = isModelPairDownloaded(modelName: defaultModelName)
+        
+        manager = create_model_manager()
+    }
+    
+    deinit {
+        if let manager = manager {
+            destroy_model_manager(manager)
+        }
     }
     
     func getMTMDModel(name: String) -> MTMDModelPair? {
@@ -197,10 +205,31 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private func loadModelPair(languagePath: String, visionPath: String) async throws {
         do {
             // Load language model first
-            try await mtmdManager.loadLanguageModel(languagePath)
+            guard loadLanguageModel(path: languagePath) else {
+                throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Failed to load language model"])
+            }
             
             // Then load vision model
-            try await mtmdManager.loadVisionModel(visionPath)
+            guard loadVisionModel(path: visionPath) else {
+                throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Failed to load vision model"])
+            }
+            
+            // Initialize the context and other components
+            guard initializeContext() else {
+                throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize context"])
+            }
+            
+            guard initializeBatch() else {
+                throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize batch"])
+            }
+            
+            guard initializeSampler() else {
+                throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize sampler"])
+            }
+            
+            guard initializeChatTemplate() else {
+                throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize chat template"])
+            }
             
             print("Successfully loaded both models")
         } catch {
@@ -376,13 +405,29 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
         
         do {
-            // Process the image
-            try await mtmdManager.processImage(image)
-            
-            // Generate response
-            let response = try await mtmdManager.generateResponse(prompt, maxTokens: 512)
-            
-            return response
+            // Save image to temporary file
+            let tempDir = FileManager.default.temporaryDirectory
+            let imagePath = tempDir.appendingPathComponent(UUID().uuidString + ".jpg")
+            if let imageData = image.jpegData(compressionQuality: 0.8) {
+                try imageData.write(to: imagePath)
+                
+                // Process the image
+                guard processImage(path: imagePath.path) else {
+                    throw NSError(domain: "ModelManager", code: 9, userInfo: [NSLocalizedDescriptionKey: "Failed to process image"])
+                }
+                
+                // Generate response
+                guard let response = generateResponse(prompt: prompt, maxTokens: 512) else {
+                    throw NSError(domain: "ModelManager", code: 10, userInfo: [NSLocalizedDescriptionKey: "Failed to generate response"])
+                }
+                
+                // Clean up temporary file
+                try? FileManager.default.removeItem(at: imagePath)
+                
+                return response
+            } else {
+                throw NSError(domain: "ModelManager", code: 11, userInfo: [NSLocalizedDescriptionKey: "Failed to convert image to JPEG"])
+            }
         } catch {
             print("Error processing image: \(error)")
             throw error
@@ -398,15 +443,55 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let visionPath = getModelPath(mtmdModel.visionId).path
         
         // Load the language model
-        try await mtmdManager.loadLanguageModel(languagePath)
-        
-        // Load the vision model
-        try await mtmdManager.loadVisionModel(visionPath)
+        try await loadModelPair(languagePath: languagePath, visionPath: visionPath)
         
         isModelLoaded = true
     }
     
     func cleanup() {
         isModelLoaded = false
+    }
+    
+    func loadLanguageModel(path: String) -> Bool {
+        guard let manager = manager else { return false }
+        return load_language_model(manager, path)
+    }
+    
+    func loadVisionModel(path: String) -> Bool {
+        guard let manager = manager else { return false }
+        return load_vision_model(manager, path)
+    }
+    
+    func initializeContext() -> Bool {
+        guard let manager = manager else { return false }
+        return initialize_context(manager)
+    }
+    
+    func initializeBatch() -> Bool {
+        guard let manager = manager else { return false }
+        return initialize_batch(manager)
+    }
+    
+    func initializeSampler() -> Bool {
+        guard let manager = manager else { return false }
+        return initialize_sampler(manager)
+    }
+    
+    // This can't be null, the deafult is vicuna
+    func initializeChatTemplate(templateName: String? = "vicuna") -> Bool {
+        guard let manager = manager else { return false }
+        return initialize_chat_template(manager, templateName)
+    }
+    
+    func processImage(path: String) -> Bool {
+        guard let manager = manager else { return false }
+        return process_image(manager, path)
+    }
+    
+    func generateResponse(prompt: String, maxTokens: Int) -> String? {
+        guard let manager = manager else { return nil }
+        guard let response = generate_response(manager, prompt, Int32(maxTokens)) else { return nil }
+        defer { free_response(response) }
+        return String(cString: response)
     }
 } 

@@ -445,6 +445,7 @@
 				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/llama.xcframework";
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "llama.xcframework/ios-arm64/llama.framework/Headers";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "BaseweightSnap needs camera access to take photos for image analysis and description generation.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "BaseweightSnap needs photo library access to select images for analysis and description generation.";
@@ -461,7 +462,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = ai.baseweight.Snap;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_OBJC_BRIDGING_HEADER = "Snap/Snap-Bridging-Header.h";
 				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -480,6 +481,7 @@
 				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/llama.xcframework";
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "llama.xcframework/ios-arm64/llama.framework/Headers";
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "BaseweightSnap needs camera access to take photos for image analysis and description generation.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "BaseweightSnap needs photo library access to select images for analysis and description generation.";
@@ -496,7 +498,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = ai.baseweight.Snap;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_OBJC_BRIDGING_HEADER = "Snap/Snap-Bridging-Header.h";
 				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
