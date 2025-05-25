@@ -34,6 +34,8 @@ struct MTMDModelPair {
     var visionId: String { vision.id }
 }
 
+typealias TokenCallback = @convention(c) (UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void
+
 class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = ModelManager()
     
@@ -411,20 +413,20 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             if let imageData = image.jpegData(compressionQuality: 0.8) {
                 try imageData.write(to: imagePath)
                 
+                print("Processing image at path: \(imagePath.path)")
+                
                 // Process the image
                 guard processImage(path: imagePath.path) else {
+                    print("Failed to process image at path: \(imagePath.path)")
                     throw NSError(domain: "ModelManager", code: 9, userInfo: [NSLocalizedDescriptionKey: "Failed to process image"])
                 }
                 
-                // Generate response
-                guard let response = generateResponse(prompt: prompt, maxTokens: 512) else {
-                    throw NSError(domain: "ModelManager", code: 10, userInfo: [NSLocalizedDescriptionKey: "Failed to generate response"])
-                }
+                print("Image processed successfully")
                 
                 // Clean up temporary file
                 try? FileManager.default.removeItem(at: imagePath)
                 
-                return response
+                return ""  // Return empty string since we're using streaming now
             } else {
                 throw NSError(domain: "ModelManager", code: 11, userInfo: [NSLocalizedDescriptionKey: "Failed to convert image to JPEG"])
             }
@@ -494,4 +496,56 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         defer { free_response(response) }
         return String(cString: response)
     }
+    
+    func generateResponseStream(prompt: String, maxTokens: Int, onToken: @escaping (String) -> Void) -> Bool {
+        guard let manager = manager else { return false }
+        
+        print("Starting response stream with prompt: \(prompt)")
+        
+        // Create a context object to hold our callback
+        class CallbackContext {
+            let callback: (String) -> Void
+            init(_ callback: @escaping (String) -> Void) {
+                self.callback = callback
+            }
+        }
+        
+        // Create a strong reference to the context
+        let context = CallbackContext(onToken)
+        let contextPtr = Unmanaged.passUnretained(context).toOpaque()
+        
+        // Create the C callback
+        let callback: TokenCallback = { token, userData in
+            guard let token = token else { return }
+            print("C callback received token: \(String(cString: token))")
+            
+            // Get the context without consuming it
+            let context = Unmanaged<CallbackContext>.fromOpaque(userData!).takeUnretainedValue()
+            
+            // Always dispatch to main thread for UI updates
+            DispatchQueue.main.async {
+                print("Executing callback on main thread")
+                context.callback(String(cString: token))
+                print("C callback completed for token: \(String(cString: token))")
+            }
+        }
+        
+        // Run generation on background thread
+        DispatchQueue.global(qos: .userInitiated).async {
+            let success = generate_response_stream(manager, prompt, Int32(maxTokens), callback, contextPtr)
+            if !success {
+                DispatchQueue.main.async {
+                    onToken("Error: Failed to generate response")
+                }
+            }
+        }
+        
+        // Store the context to keep it alive
+        self._callbackContext = context
+        
+        return true
+    }
+    
+    // Add a property to store the callback context
+    private var _callbackContext: Any?
 } 

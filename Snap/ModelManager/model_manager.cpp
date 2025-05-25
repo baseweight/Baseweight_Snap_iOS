@@ -1,4 +1,6 @@
 #include "model_manager.h"
+#include <iostream>
+#include <cstdio>
 
 ModelManager::~ModelManager() {
     cleanup();
@@ -30,7 +32,7 @@ bool ModelManager::loadLanguageModel(const char* model_path) {
     cleanup();  // Clean up any existing models first
     
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = 32;
+    model_params.n_gpu_layers = 512;
     model = llama_model_load_from_file(model_path, model_params);
     if (!model) {
         LOGe("Failed to load language model from %s", model_path);
@@ -100,16 +102,14 @@ void ModelManager::addBitmap(mtmd::bitmap&& bmp) {
     bitmaps.entries.push_back(std::move(bmp));
 }
 
-std::string ModelManager::generateResponse(const char* prompt, int max_tokens) {
-    std::string result;
-
+bool ModelManager::generateResponse(const char* prompt, int max_tokens, TokenCallback callback) {
     std::string str_prompt(prompt);
     if(str_prompt.find("<__image__>") == std::string::npos) {
         str_prompt = " <__image__> " + str_prompt;
     }
     
     if (!evalMessage(str_prompt.c_str(), true)) {  // Add BOS token for first message
-        return "Error: Failed to evaluate message";
+        return false;
     }
 
     llama_tokens generated_tokens;
@@ -124,10 +124,12 @@ std::string ModelManager::generateResponse(const char* prompt, int max_tokens) {
             break;
         }
 
-        // Convert token to text
+        // Convert token to text and stream it immediately
         std::string token_text = common_token_to_piece(lctx, token_id);
         if (!token_text.empty()) {
-            result += token_text;
+            LOGi("Generated token: %s", token_text.c_str());
+            callback(token_text);
+            LOGi("Callback executed for token: %s", token_text.c_str());
         }
 
         // Check if we've generated enough tokens
@@ -139,10 +141,19 @@ std::string ModelManager::generateResponse(const char* prompt, int max_tokens) {
         common_batch_clear(batch);
         common_batch_add(batch, token_id, n_past++, {0}, true);
         if (llama_decode(lctx, batch)) {
-            return "Error: Failed to decode token";
+            return false;
         }
     }
 
+    return true;
+}
+
+// Keep the original implementation for backward compatibility
+std::string ModelManager::generateResponse(const char* prompt, int max_tokens) {
+    std::string result;
+    generateResponse(prompt, max_tokens, [&result](const std::string& token) {
+        result += token;
+    });
     return result;
 }
 
@@ -170,9 +181,16 @@ bool ModelManager::evalMessage(const char* prompt, bool add_bos) {
     text.add_special = add_bos;
     text.parse_special = true;
 
+    LOGi("Input text: %s", text.text);
+    LOGi("add_special: %d", text.add_special);
+    LOGi("parse_special: %d", text.parse_special);
+
     mtmd::input_chunks chunks(mtmd_input_chunks_init());
     auto& bitmaps = getBitmaps();  // Use non-const reference since c_ptr() isn't const
     auto bitmaps_c_ptr = bitmaps.c_ptr();
+    
+    LOGi("Number of bitmaps: %zu", bitmaps_c_ptr.size());
+    
     int32_t res = mtmd_tokenize(ctx_vision,
                                chunks.ptr.get(),
                                &text,
@@ -180,6 +198,10 @@ bool ModelManager::evalMessage(const char* prompt, bool add_bos) {
                                bitmaps_c_ptr.size());
     if (res != 0) {
         LOGe("Unable to tokenize prompt, res = %d", res);
+        LOGe("Context vision: %p", ctx_vision);
+        LOGe("Chunks ptr: %p", chunks.ptr.get());
+        LOGe("Text ptr: %p", &text);
+        LOGe("Bitmaps data: %p", bitmaps_c_ptr.data());
         return false;
     }
 
@@ -210,7 +232,10 @@ bool ModelManager::initializeChatTemplate(const char* template_name) {
     }
 
     // Check if model has built-in chat template
-    if (!llama_model_chat_template(model, nullptr) && !template_name) {
+    const char* built_in_template = llama_model_chat_template(model, nullptr);
+    LOGi("Built-in chat template: %s", built_in_template ? built_in_template : "none");
+    
+    if (!built_in_template && !template_name) {
         LOGe("Model does not have chat template and no template name provided");
         return false;
     }
@@ -222,12 +247,16 @@ bool ModelManager::initializeChatTemplate(const char* template_name) {
         return false;
     }
 
+    LOGi("Chat template initialized with name: %s", template_name ? template_name : "default");
+
     // Load antiprompt tokens for legacy templates
     if (template_name) {
         if (strcmp(template_name, "vicuna") == 0) {
             antiprompt_tokens = common_tokenize(lctx, "ASSISTANT:", false, true);
+            LOGi("Loaded vicuna antiprompt tokens");
         } else if (strcmp(template_name, "deepseek") == 0) {
             antiprompt_tokens = common_tokenize(lctx, "###", false, true);
+            LOGi("Loaded deepseek antiprompt tokens");
         }
     }
 
@@ -244,3 +273,4 @@ bool ModelManager::checkAntiprompt(const llama_tokens& generated_tokens) const {
         antiprompt_tokens.begin()
     );
 }
+

@@ -9,6 +9,7 @@
 #include "chat.h"
 #include "common.h"
 #include "sampling.h"
+#include <functional>
 
 #define TAG "com.snap.modelmanager"
 #define LOGi(...) os_log(OS_LOG_DEFAULT, __VA_ARGS__)
@@ -44,6 +45,13 @@ public:
     bool areModelsLoaded() const { return model != nullptr && ctx_vision != nullptr && lctx != nullptr; }
 
     // Text generation
+    // Callback type for streaming tokens
+    using TokenCallback = std::function<void(const std::string& token)>;
+    
+    // Modified generateResponse to support streaming
+    bool generateResponse(const char* prompt, int max_tokens, TokenCallback callback);
+    
+    // Original generateResponse kept for backward compatibility
     std::string generateResponse(const char* prompt, int max_tokens);
     bool evalMessage(const char* prompt, bool add_bos = false);
 

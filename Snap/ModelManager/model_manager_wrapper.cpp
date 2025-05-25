@@ -1,6 +1,9 @@
 #include "model_manager.h"
 #include <cstring>
 
+// Callback type for C wrapper
+typedef void (*TokenCallback)(const char* token, void* user_data);
+
 extern "C" {
 
 void* create_model_manager(void) {
@@ -46,6 +49,15 @@ bool initialize_chat_template(void* manager, const char* template_name) {
 bool process_image(void* manager, const char* image_path) {
     if (!manager || !image_path) return false;
     return static_cast<ModelManager*>(manager)->processImage(image_path);
+}
+
+bool generate_response_stream(void* manager, const char* prompt, int max_tokens, TokenCallback callback, void* user_data) {
+    if (!manager || !prompt || !callback) return false;
+    
+    return static_cast<ModelManager*>(manager)->generateResponse(prompt, max_tokens,
+        [callback, user_data](const std::string& token) {
+            callback(token.c_str(), user_data);
+        });
 }
 
 char* generate_response(void* manager, const char* prompt, int max_tokens) {

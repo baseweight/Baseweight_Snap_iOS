@@ -483,15 +483,30 @@ struct ImagePicker: UIViewControllerRepresentable {
     }
 }
 
+class StreamState: ObservableObject {
+    @Published var text: String = ""
+    @Published var updateCount: Int = 0  // Force view updates
+    
+    func append(_ token: String) {
+        text += token
+        updateCount += 1  // Force view update
+    }
+    
+    func clear() {
+        text = ""
+        updateCount += 1
+    }
+}
+
 struct PreviewView: View {
     let image: UIImage
     @State private var showTextInput = false
     @State private var inputText = ""
-    @State private var showResponse = false
-    @State private var responseText = ""
     @State private var isGenerating = false
     @Environment(\.dismiss) private var dismiss
     @StateObject private var modelManager = ModelManager.shared
+    @State private var responseText = ""
+    @State private var updateCount = 0  // Force view updates
     
     var body: some View {
         VStack {
@@ -499,13 +514,16 @@ struct PreviewView: View {
                 .resizable()
                 .scaledToFit()
             
-            if showResponse {
-                ScrollView {
-                    Text(responseText)
-                        .padding()
-                }
-                .frame(maxHeight: 200)
+            ScrollView {
+                Text(responseText.isEmpty ? " " : responseText)  // Keep height when empty
+                    .padding()
+                    .id(updateCount)  // Force view update on each token
             }
+            .frame(maxHeight: 200)
+            .background(Color(.systemBackground))
+            .cornerRadius(10)
+            .shadow(radius: 2)
+            .padding()
             
             HStack(spacing: 20) {
                 Button(action: { showTextInput = true }) {
@@ -556,25 +574,31 @@ struct PreviewView: View {
         
         print("Starting response generation with prompt: \(prompt)")
         isGenerating = true
-        showResponse = true
-        responseText = "Generating response..."
+        responseText = ""
+        updateCount = 0
         
         Task {
             do {
                 print("Processing image with prompt")
-                let response = try await modelManager.processImage(image, prompt: prompt)
-                print("Received response: \(response)")
+                try await modelManager.processImage(image, prompt: prompt)
+                print("Image processed, starting text generation")
                 
-                await MainActor.run {
-                    responseText = response
-                    isGenerating = false
+                // Use streaming for text generation
+                _ = modelManager.generateResponseStream(prompt: prompt, maxTokens: 512) { token in
+                    print("Received token in UI: \(token)")
+                    withAnimation {
+                        responseText += token
+                        updateCount += 1  // Force view update
+                    }
+                    print("Updated UI with token: \(token), new count: \(updateCount)")
                 }
+                
+                // Note: We don't set isGenerating = false here anymore
+                // as the generation happens asynchronously
             } catch {
                 print("Error generating response: \(error)")
-                await MainActor.run {
-                    responseText = "Error: \(error.localizedDescription)"
-                    isGenerating = false
-                }
+                responseText = "Error: \(error.localizedDescription)"
+                isGenerating = false
             }
         }
     }
