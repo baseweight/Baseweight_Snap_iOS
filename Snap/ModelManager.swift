@@ -497,7 +497,7 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return String(cString: response)
     }
     
-    func generateResponseStream(prompt: String, maxTokens: Int, onToken: @escaping (String) -> Void) -> Bool {
+    func generateResponseStream(prompt: String, maxTokens: Int, onToken: @escaping (String) -> Void, onComplete: @escaping () -> Void) -> Bool {
         guard let manager = manager else { return false }
         
         print("Starting response stream with prompt: \(prompt)")
@@ -505,13 +505,15 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         // Create a context object to hold our callback
         class CallbackContext {
             let callback: (String) -> Void
-            init(_ callback: @escaping (String) -> Void) {
+            let onComplete: () -> Void
+            init(_ callback: @escaping (String) -> Void, _ onComplete: @escaping () -> Void) {
                 self.callback = callback
+                self.onComplete = onComplete
             }
         }
         
         // Create a strong reference to the context
-        let context = CallbackContext(onToken)
+        let context = CallbackContext(onToken, onComplete)
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
         
         // Create the C callback
@@ -533,10 +535,11 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         // Run generation on background thread
         DispatchQueue.global(qos: .userInitiated).async {
             let success = generate_response_stream(manager, prompt, Int32(maxTokens), callback, contextPtr)
-            if !success {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                if !success {
                     onToken("Error: Failed to generate response")
                 }
+                context.onComplete()
             }
         }
         

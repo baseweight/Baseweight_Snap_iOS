@@ -514,16 +514,24 @@ struct PreviewView: View {
                 .resizable()
                 .scaledToFit()
             
-            ScrollView {
-                Text(responseText.isEmpty ? " " : responseText)  // Keep height when empty
-                    .padding()
-                    .id(updateCount)  // Force view update on each token
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(responseText.isEmpty ? " " : responseText)  // Keep height when empty
+                        .padding()
+                        .id(updateCount)  // Force view update on each token
+                        .id("bottom")  // ID for scrolling
+                }
+                .frame(maxHeight: 200)
+                .background(Color(.systemBackground))
+                .cornerRadius(10)
+                .shadow(radius: 2)
+                .padding()
+                .onChange(of: responseText) { _ in
+                    withAnimation {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
             }
-            .frame(maxHeight: 200)
-            .background(Color(.systemBackground))
-            .cornerRadius(10)
-            .shadow(radius: 2)
-            .padding()
             
             HStack(spacing: 20) {
                 Button(action: { showTextInput = true }) {
@@ -584,17 +592,22 @@ struct PreviewView: View {
                 print("Image processed, starting text generation")
                 
                 // Use streaming for text generation
-                _ = modelManager.generateResponseStream(prompt: prompt, maxTokens: 512) { token in
-                    print("Received token in UI: \(token)")
-                    withAnimation {
-                        responseText += token
-                        updateCount += 1  // Force view update
+                _ = modelManager.generateResponseStream(
+                    prompt: prompt,
+                    maxTokens: 512,
+                    onToken: { token in
+                        print("Received token in UI: \(token)")
+                        withAnimation {
+                            responseText += token
+                            updateCount += 1  // Force view update
+                        }
+                        print("Updated UI with token: \(token), new count: \(updateCount)")
+                    },
+                    onComplete: {
+                        print("Generation complete")
+                        isGenerating = false
                     }
-                    print("Updated UI with token: \(token), new count: \(updateCount)")
-                }
-                
-                // Note: We don't set isGenerating = false here anymore
-                // as the generation happens asynchronously
+                )
             } catch {
                 print("Error generating response: \(error)")
                 responseText = "Error: \(error.localizedDescription)"
