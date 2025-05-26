@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="1200pt"
+   height="1200pt"
+   version="1.1"
+   viewBox="0 0 1200 1200"
+   id="svg274"
+   sodipodi:docname="Snap_Icon.svg"
+   inkscape:export-filename="../baseweight_download/BaseweightSnap/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp"
+   inkscape:export-xdpi="11.52"
+   inkscape:export-ydpi="11.52"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs278" />
+  <sodipodi:namedview
+     id="namedview276"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="pt"
+     showgrid="false"
+     inkscape:zoom="0.5425"
+     inkscape:cx="800"
+     inkscape:cy="802.76498"
+     inkscape:window-width="1452"
+     inkscape:window-height="749"
+     inkscape:window-x="2124"
+     inkscape:window-y="70"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg274" />
+  <path
+     d="m705.88 381.14c95.461 0 178.34 52.57 224.1 130.01l269.71 0.3125v-146.17c0-54.395-43.766-98.52-97.453-98.52h-1005.1c-53.855 0-97.152 44.121-97.152 98.52l0.27734 144.94 481.34 0.32422c46.078-77.164 128.62-129.41 224.25-129.41"
+     id="path262"
+     style="fill:#000080" />
+  <path
+     d="m252.07 220.37h-89.41l-10.332 32.578h107.17z"
+     id="path264"
+     style="fill:#000080" />
+  <path
+     d="m1058.3 202.99h-119.05l-21.121 50.254h159.48z"
+     id="path266"
+     style="fill:#000080" />
+  <path
+     d="m649.64 235.89h-102.47v-50.109h102.47zm93.934-70.246h-289.32l-59.605 88.223h403.5z"
+     id="path268"
+     style="fill:#000080" />
+  <path
+     d="m943.96 537.29c14.914 33.203 23.723 69.758 23.723 108.66 0 146.16-117.24 264.8-261.79 264.8-144.74 0-261.95-118.66-261.95-264.8 0-38.902 8.6758-75.457 23.711-108.83h-467.65v399.02c0 54.086 43.297 98.207 97.152 98.207h1005.1c53.688 0 97.453-44.125 97.453-98.207l0.32422-398.86z"
+     id="path270"
+     style="fill:#008000" />
+  <path
+     d="m848.64 558.95c-4.1055-7.3789-9.2773-14.305-14.902-20.891-30.562-37.199-76.309-61.656-127.85-61.656-51.707 0-97.453 24.312-128.02 61.344-5.6172 6.7578-10.801 13.68-15.203 21.203-15.336 25.523-24.625 55.02-24.625 87 0 93.457 75.121 169.37 167.84 169.37 92.27 0 167.4-75.91 167.4-169.37-0.011718-31.969-9.1328-61.465-24.648-87"
+     id="path272"
+     style="fill:#ffff00" />
+</svg>

@@ -32,20 +32,28 @@ struct SplashView: View {
     @State private var errorMessage = ""
     
     var body: some View {
-        VStack {
-            Image("baseweightmascot_white")
+        VStack(spacing: 20) {
+            Image("Snap_Icon")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 162, height: 235)
+                .frame(width: 200, height: 200)
+                .padding(.top, 50)
+                .shadow(radius: 5)
             
             Text("Baseweight Snap")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .foregroundColor(.primary)
             
             if modelManager.isDownloading {
-                ProgressView(value: Double(modelManager.downloadProgress?.progress ?? 0), total: 100)
-                    .progressViewStyle(LinearProgressViewStyle())
-                    .frame(width: 200)
+                VStack(spacing: 10) {
+                    ProgressView(value: Double(modelManager.downloadProgress?.progress ?? 0), total: 100)
+                        .progressViewStyle(LinearProgressViewStyle())
+                        .frame(width: 200)
+                    
+                    Text("\(modelManager.downloadProgress?.progress ?? 0)%")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
             } else {
                 ProgressView()
                     .padding()
@@ -54,7 +62,11 @@ struct SplashView: View {
             Text(modelManager.downloadProgress?.message ?? "Loading models...")
                 .font(.subheadline)
                 .foregroundColor(.gray)
+            
+            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
         .onAppear {
             Task {
                 await checkAndLoadModels()
@@ -503,6 +515,7 @@ struct PreviewView: View {
     @State private var showTextInput = false
     @State private var inputText = ""
     @State private var isGenerating = false
+    @State private var isProcessingImage = false
     @Environment(\.dismiss) private var dismiss
     @StateObject private var modelManager = ModelManager.shared
     @State private var responseText = ""
@@ -551,9 +564,22 @@ struct PreviewView: View {
             }
             .padding()
             
-            if isGenerating {
-                ProgressView()
-                    .padding()
+            if isProcessingImage {
+                VStack {
+                    ProgressView()
+                        .padding()
+                    Text("Processing image...")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            } else if isGenerating {
+                VStack {
+                    ProgressView()
+                        .padding()
+                    Text("Generating response...")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
             }
         }
         .sheet(isPresented: $showTextInput) {
@@ -569,7 +595,7 @@ struct PreviewView: View {
     }
     
     private func generateResponse(prompt: String) {
-        guard !isGenerating else {
+        guard !isGenerating && !isProcessingImage else {
             print("Already generating response")
             return
         }
@@ -581,7 +607,7 @@ struct PreviewView: View {
         }
         
         print("Starting response generation with prompt: \(prompt)")
-        isGenerating = true
+        isProcessingImage = true
         responseText = ""
         updateCount = 0
         
@@ -590,6 +616,9 @@ struct PreviewView: View {
                 print("Processing image with prompt")
                 try await modelManager.processImage(image, prompt: prompt)
                 print("Image processed, starting text generation")
+                
+                isProcessingImage = false
+                isGenerating = true
                 
                 // Use streaming for text generation
                 _ = modelManager.generateResponseStream(
@@ -611,6 +640,7 @@ struct PreviewView: View {
             } catch {
                 print("Error generating response: \(error)")
                 responseText = "Error: \(error.localizedDescription)"
+                isProcessingImage = false
                 isGenerating = false
             }
         }
