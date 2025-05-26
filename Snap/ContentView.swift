@@ -392,6 +392,7 @@ struct CameraView: View {
     @State private var inputText = ""
     @State private var showResponse = false
     @State private var responseText = ""
+    @State private var showWelcomeDialog = true
     
     var body: some View {
         GeometryReader { geometry in
@@ -459,6 +460,9 @@ struct CameraView: View {
             if let image = cameraManager.capturedImage {
                 PreviewView(image: image)
             }
+        }
+        .sheet(isPresented: $showWelcomeDialog) {
+            WelcomeDialogView(isPresented: $showWelcomeDialog)
         }
     }
 }
@@ -668,6 +672,68 @@ struct TextInputView: View {
             }
             .navigationTitle("Add Prompt")
             .navigationBarItems(trailing: Button("Cancel") {
+                isPresented = false
+            })
+        }
+    }
+}
+
+struct WelcomeDialogView: View {
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Welcome to Baseweight Snap")
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .padding(.bottom, 10)
+                    
+                    Text("Here's how to use the app:")
+                        .font(.headline)
+                    
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top) {
+                            Text("•")
+                            Text("Take a photo or select one from your gallery")
+                        }
+                        HStack(alignment: .top) {
+                            Text("•")
+                            Text("Add a prompt, or click the magnifying glass to describe")
+                        }
+                    }
+                    .padding(.leading)
+                    
+                    Text("Copyright 2025 Baseweight Solutions Inc")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .padding(.top, 20)
+                    
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Powered by:")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        HStack(alignment: .top) {
+                            Text("•")
+                            Text("llama.cpp - Copyright 2025 ggml.ai (MIT)")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        
+                        HStack(alignment: .top) {
+                            Text("•")
+                            Text("SmolVLM2 - Copyright 2025 Hugging Face Inc (Apache 2)")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    }
+                    .padding(.top, 10)
+                }
+                .padding()
+            }
+            .navigationBarItems(trailing: Button("Got it!") {
                 isPresented = false
             })
         }
