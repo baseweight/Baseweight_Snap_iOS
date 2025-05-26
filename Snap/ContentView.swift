@@ -11,11 +11,12 @@ import AVFoundation
 struct ContentView: View {
     @State private var isSplashActive = true
     @State private var showCamera = false
+    @StateObject private var modelManager = ModelManager.shared
     
     var body: some View {
         ZStack {
             if isSplashActive {
-                SplashView(isActive: $isSplashActive)
+                SplashView(isActive: $isSplashActive, modelManager: modelManager)
             } else {
                 CameraView()
             }
@@ -25,29 +26,134 @@ struct ContentView: View {
 
 struct SplashView: View {
     @Binding var isActive: Bool
-    @State private var loadingText = "Loading models..."
+    @ObservedObject var modelManager: ModelManager
+    @State private var showCellularWarning = false
+    @State private var showErrorAlert = false
+    @State private var errorMessage = ""
     
     var body: some View {
-        VStack {
-            Text("BaseweightSnap")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+        VStack(spacing: 20) {
+            Image("Snap_Icon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 200, height: 200)
+                .padding(.top, 50)
+                .shadow(radius: 5)
             
-            ProgressView()
-                .padding()
+            Text("Baseweight Snap")
+                .font(.system(size: 40, weight: .bold, design: .rounded))
+                .foregroundColor(.primary)
             
-            Text(loadingText)
+            if modelManager.isDownloading {
+                VStack(spacing: 10) {
+                    ProgressView(value: Double(modelManager.downloadProgress?.progress ?? 0), total: 100)
+                        .progressViewStyle(LinearProgressViewStyle())
+                        .frame(width: 200)
+                    
+                    Text("\(modelManager.downloadProgress?.progress ?? 0)%")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            } else {
+                ProgressView()
+                    .padding()
+            }
+            
+            Text(modelManager.downloadProgress?.message ?? "Loading models...")
                 .font(.subheadline)
                 .foregroundColor(.gray)
+            
+            Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
         .onAppear {
-            // Simulate model loading
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                withAnimation {
-                    isActive = false
-                }
+            Task {
+                await checkAndLoadModels()
             }
         }
+        .alert("Error", isPresented: $showErrorAlert) {
+            Button("OK") {
+                // Exit the app
+                exit(0)
+            }
+        } message: {
+            Text(errorMessage)
+        }
+        .alert("Large File Download Warning", isPresented: $showCellularWarning) {
+            Button("Continue") {
+                Task {
+                    await downloadModels()
+                }
+            }
+            Button("Exit", role: .destructive) {
+                exit(0)
+            }
+        } message: {
+            Text("These are large files (total ~2.4GB). Please connect to WiFi for the best experience.\n\nWould you like to continue downloading anyway?")
+        }
+    }
+    
+    private func checkAndLoadModels() async {
+        do {
+            // Check if models are already downloaded
+            let defaultModelName = modelManager.availableModels[0].name
+            let modelsDownloaded = modelManager.isModelPairDownloaded(modelName: defaultModelName)
+            
+            if modelsDownloaded {
+                // Load the downloaded models
+                try await modelManager.loadDownloadedModels()
+                
+                // Only proceed to main screen after models are loaded
+                if modelManager.isModelLoaded {
+                    await MainActor.run {
+                        withAnimation {
+                            isActive = false
+                        }
+                    }
+                } else {
+                    showError("Failed to load models")
+                }
+            } else {
+                // Check if on WiFi
+                let isOnWifi = modelManager.isOnWiFi()
+                if isOnWifi {
+                    await downloadModels()
+                } else {
+                    showCellularWarning = true
+                }
+            }
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+    
+    private func downloadModels() async {
+        do {
+            let defaultModelName = modelManager.availableModels[0].name
+            try await modelManager.downloadModelPair(modelName: defaultModelName)
+            
+            // Models downloaded successfully, now load them
+            try await modelManager.loadModelPair(modelName: defaultModelName)
+            
+            // Only proceed to main screen after models are loaded
+            if modelManager.isModelLoaded {
+                await MainActor.run {
+                    withAnimation {
+                        isActive = false
+                    }
+                }
+            } else {
+                showError("Failed to load models")
+            }
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+    
+    private func showError(_ message: String) {
+        errorMessage = message
+        showErrorAlert = true
     }
 }
 
@@ -286,6 +392,7 @@ struct CameraView: View {
     @State private var inputText = ""
     @State private var showResponse = false
     @State private var responseText = ""
+    @State private var showWelcomeDialog = true
     
     var body: some View {
         GeometryReader { geometry in
@@ -354,6 +461,9 @@ struct CameraView: View {
                 PreviewView(image: image)
             }
         }
+        .sheet(isPresented: $showWelcomeDialog) {
+            WelcomeDialogView(isPresented: $showWelcomeDialog)
+        }
     }
 }
 
@@ -389,12 +499,31 @@ struct ImagePicker: UIViewControllerRepresentable {
     }
 }
 
+class StreamState: ObservableObject {
+    @Published var text: String = ""
+    @Published var updateCount: Int = 0  // Force view updates
+    
+    func append(_ token: String) {
+        text += token
+        updateCount += 1  // Force view update
+    }
+    
+    func clear() {
+        text = ""
+        updateCount += 1
+    }
+}
+
 struct PreviewView: View {
     let image: UIImage
     @State private var showTextInput = false
     @State private var inputText = ""
-    @State private var showResponse = false
+    @State private var isGenerating = false
+    @State private var isProcessingImage = false
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var modelManager = ModelManager.shared
     @State private var responseText = ""
+    @State private var updateCount = 0  // Force view updates
     
     var body: some View {
         VStack {
@@ -402,21 +531,122 @@ struct PreviewView: View {
                 .resizable()
                 .scaledToFit()
             
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(responseText.isEmpty ? " " : responseText)  // Keep height when empty
+                        .padding()
+                        .id(updateCount)  // Force view update on each token
+                        .id("bottom")  // ID for scrolling
+                }
+                .frame(maxHeight: 200)
+                .background(Color(.systemBackground))
+                .cornerRadius(10)
+                .shadow(radius: 2)
+                .padding()
+                .onChange(of: responseText) { _ in
+                    withAnimation {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
+            }
+            
             HStack(spacing: 20) {
                 Button(action: { showTextInput = true }) {
                     Image(systemName: "text.bubble")
                         .font(.system(size: 24))
                 }
                 
-                Button(action: { /* Generate description */ }) {
+                Button(action: { generateDescription() }) {
                     Image(systemName: "text.magnifyingglass")
+                        .font(.system(size: 24))
+                }
+                
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 24))
                 }
             }
             .padding()
+            
+            if isProcessingImage {
+                VStack {
+                    ProgressView()
+                        .padding()
+                    Text("Processing image...")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            } else if isGenerating {
+                VStack {
+                    ProgressView()
+                        .padding()
+                    Text("Generating response...")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            }
         }
         .sheet(isPresented: $showTextInput) {
-            TextInputView(text: $inputText, isPresented: $showTextInput)
+            TextInputView(text: $inputText, isPresented: $showTextInput, onSubmit: { prompt in
+                generateResponse(prompt: prompt)
+            })
+        }
+    }
+    
+    private func generateDescription() {
+        print("Generating description")
+        generateResponse(prompt: "Can you describe this image")
+    }
+    
+    private func generateResponse(prompt: String) {
+        guard !isGenerating && !isProcessingImage else {
+            print("Already generating response")
+            return
+        }
+        
+        guard modelManager.isModelLoaded else {
+            print("Model not loaded")
+            responseText = "Error: Model not loaded"
+            return
+        }
+        
+        print("Starting response generation with prompt: \(prompt)")
+        isProcessingImage = true
+        responseText = ""
+        updateCount = 0
+        
+        Task {
+            do {
+                print("Processing image with prompt")
+                try await modelManager.processImage(image, prompt: prompt)
+                print("Image processed, starting text generation")
+                
+                isProcessingImage = false
+                isGenerating = true
+                
+                // Use streaming for text generation
+                _ = modelManager.generateResponseStream(
+                    prompt: prompt,
+                    maxTokens: 512,
+                    onToken: { token in
+                        print("Received token in UI: \(token)")
+                        withAnimation {
+                            responseText += token
+                            updateCount += 1  // Force view update
+                        }
+                        print("Updated UI with token: \(token), new count: \(updateCount)")
+                    },
+                    onComplete: {
+                        print("Generation complete")
+                        isGenerating = false
+                    }
+                )
+            } catch {
+                print("Error generating response: \(error)")
+                responseText = "Error: \(error.localizedDescription)"
+                isProcessingImage = false
+                isGenerating = false
+            }
         }
     }
 }
@@ -424,22 +654,86 @@ struct PreviewView: View {
 struct TextInputView: View {
     @Binding var text: String
     @Binding var isPresented: Bool
+    var onSubmit: (String) -> Void
     
     var body: some View {
         NavigationView {
             VStack {
-                TextField("Enter text...", text: $text)
+                TextField("Enter prompt...", text: $text)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding()
                 
                 Button("Submit") {
-                    // Handle text submission
+                    print("Submitting prompt: \(text)")
+                    onSubmit(text)
                     isPresented = false
                 }
                 .padding()
             }
-            .navigationTitle("Add Text")
+            .navigationTitle("Add Prompt")
             .navigationBarItems(trailing: Button("Cancel") {
+                isPresented = false
+            })
+        }
+    }
+}
+
+struct WelcomeDialogView: View {
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Welcome to Baseweight Snap")
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .padding(.bottom, 10)
+                    
+                    Text("Here's how to use the app:")
+                        .font(.headline)
+                    
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top) {
+                            Text("•")
+                            Text("Take a photo or select one from your gallery")
+                        }
+                        HStack(alignment: .top) {
+                            Text("•")
+                            Text("Add a prompt, or click the magnifying glass to describe")
+                        }
+                    }
+                    .padding(.leading)
+                    
+                    Text("Copyright 2025 Baseweight Solutions Inc")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .padding(.top, 20)
+                    
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Powered by:")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        HStack(alignment: .top) {
+                            Text("•")
+                            Text("llama.cpp - Copyright 2025 ggml.ai (MIT)")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        
+                        HStack(alignment: .top) {
+                            Text("•")
+                            Text("SmolVLM2 - Copyright 2025 Hugging Face Inc (Apache 2)")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    }
+                    .padding(.top, 10)
+                }
+                .padding()
+            }
+            .navigationBarItems(trailing: Button("Got it!") {
                 isPresented = false
             })
         }

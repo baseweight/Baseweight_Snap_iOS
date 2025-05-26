@@ -1,0 +1,3 @@
+[submodule "LlamaBindings/Sources/llama.cpp"]
+	path = LlamaBindings/Sources/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git

@@ -1,0 +1,30 @@
+module ModelManager {
+    umbrella header "model_manager.h"
+    export *
+    module * { export * }
+    
+    module llama {
+        header "/Users/bowserj/iOS_Projects/Snap/LlamaBindings/Sources/llama.cpp/include/llama.h"
+        export *
+    }
+    
+    module mtmd {
+        header "/Users/bowserj/iOS_Projects/Snap/LlamaBindings/Sources/llama.cpp/tools/mtmd/mtmd.h"
+        export *
+    }
+    
+    module chat {
+        header "/Users/bowserj/iOS_Projects/Snap/LlamaBindings/Sources/llama.cpp/tools/mtmd/chat.h"
+        export *
+    }
+    
+    module common {
+        header "/Users/bowserj/iOS_Projects/Snap/LlamaBindings/Sources/llama.cpp/common/common.h"
+        export *
+    }
+    
+    module sampling {
+        header "/Users/bowserj/iOS_Projects/Snap/LlamaBindings/Sources/llama.cpp/common/sampling.h"
+        export *
+    }
+} 
