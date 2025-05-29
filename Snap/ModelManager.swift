@@ -135,7 +135,7 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         
         let queue = DispatchQueue(label: "NetworkMonitor")
         monitor.start(queue: queue)
-        _ = semaphore.wait(timeout: .now() + 1.0)
+        _ = semaphore.wait(timeout: .now() + 5.0) // Increase timeout to 5 seconds
         monitor.cancel()
         
         return isWiFi
@@ -292,6 +292,7 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         
         var request = URLRequest(url: url)
         request.setValue("Bearer \(Config.apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 30 // Add timeout for API request
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
@@ -315,59 +316,96 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
             throw NSError(domain: "ModelManager", code: 5, userInfo: [NSLocalizedDescriptionKey: "Invalid API response"])
         }
         
+        print("Got download URL: \(downloadURL)")
+        
         await MainActor.run {
             downloadProgress = DownloadProgress(
                 progress: 0,
                 bytesDownloaded: 0,
                 totalBytes: model.size,
                 status: .downloading,
-                message: "Downloading model..."
+                message: "Starting download..."
             )
         }
         
-        // Create a URLSession with our delegate
-        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        // Create a URLSession configuration with timeouts
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 300 // 5 minutes timeout for each chunk
+        config.timeoutIntervalForResource = 3600 // 1 hour total timeout
+        config.waitsForConnectivity = true
+        
+        // Create a URLSession with our delegate and configuration
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
+        
+        // Add a timeout task
+        let timeoutTask = Task {
+            try await Task.sleep(nanoseconds: 3600 * 1_000_000_000) // 1 hour timeout
+            session.invalidateAndCancel()
+            throw NSError(domain: "ModelManager", code: 8, userInfo: [NSLocalizedDescriptionKey: "Download timed out after 1 hour"])
+        }
         
         // Download the file using downloadTask
-        let (tempFileURL, downloadResponse) = try await session.download(from: downloadURL)
-        
-        guard let downloadHttpResponse = downloadResponse as? HTTPURLResponse, downloadHttpResponse.statusCode == 200 else {
-            throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Download failed"])
-        }
-        
-        // Move the downloaded file to our target location
-        try? FileManager.default.removeItem(at: modelFile) // Remove existing file if any
-        try FileManager.default.moveItem(at: tempFileURL, to: modelFile)
-        
-        // Verify file size
-        let attributes = try FileManager.default.attributesOfItem(atPath: modelFile.path)
-        let fileSize = attributes[.size] as? Int64 ?? 0
-        
-        print("File size verification:")
-        print("Expected size: \(model.size) bytes")
-        print("Actual size: \(fileSize) bytes")
-        
-        if fileSize != model.size {
-            print("Size mismatch! Difference: \(model.size - fileSize) bytes")
-            try? FileManager.default.removeItem(at: modelFile)
-            throw NSError(domain: "ModelManager", code: 7, userInfo: [NSLocalizedDescriptionKey: "Downloaded file size mismatch"])
-        }
-        
-        await MainActor.run {
-            downloadProgress = DownloadProgress(
-                progress: 100,
-                bytesDownloaded: model.size,
-                totalBytes: model.size,
-                status: .completed,
-                message: "Download completed"
-            )
-            isDownloading = false
+        do {
+            print("Starting download task...")
+            let downloadTask = session.downloadTask(with: downloadURL)
+            downloadTask.resume()
+            
+            // Wait for the download to complete using async/await
+            let (tempFileURL, downloadResponse) = try await withCheckedThrowingContinuation { continuation in
+                self.downloadContinuation = continuation
+            }
+            
+            timeoutTask.cancel() // Cancel timeout task if download completes
+            
+            print("Download completed, verifying response...")
+            guard let downloadHttpResponse = downloadResponse as? HTTPURLResponse, downloadHttpResponse.statusCode == 200 else {
+                throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Download failed"])
+            }
+            
+            print("Moving downloaded file to final location...")
+            // Move the downloaded file to our target location
+            try? FileManager.default.removeItem(at: modelFile) // Remove existing file if any
+            try FileManager.default.moveItem(at: tempFileURL, to: modelFile)
+            
+            // Verify file size
+            let attributes = try FileManager.default.attributesOfItem(atPath: modelFile.path)
+            let fileSize = attributes[.size] as? Int64 ?? 0
+            
+            print("File size verification:")
+            print("Expected size: \(model.size) bytes")
+            print("Actual size: \(fileSize) bytes")
+            
+            if fileSize != model.size {
+                print("Size mismatch! Difference: \(model.size - fileSize) bytes")
+                try? FileManager.default.removeItem(at: modelFile)
+                throw NSError(domain: "ModelManager", code: 7, userInfo: [NSLocalizedDescriptionKey: "Downloaded file size mismatch"])
+            }
+            
+            await MainActor.run {
+                downloadProgress = DownloadProgress(
+                    progress: 100,
+                    bytesDownloaded: model.size,
+                    totalBytes: model.size,
+                    status: .completed,
+                    message: "Download completed"
+                )
+                isDownloading = false
+            }
+        } catch {
+            print("Download error: \(error)")
+            timeoutTask.cancel() // Cancel timeout task if error occurs
+            session.invalidateAndCancel()
+            throw error
         }
     }
+    
+    // Add property to store the download continuation
+    private var downloadContinuation: CheckedContinuation<(URL, URLResponse), Error>?
     
     // MARK: - URLSessionDownloadDelegate
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        print("Download progress: \(totalBytesWritten)/\(totalBytesExpectedToWrite) bytes")
         Task { @MainActor in
             currentDownloadBytesReceived = totalBytesWritten
             let progress = Int((Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)) * 100)
@@ -383,11 +421,19 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         print("Download finished to: \(location)")
+        if let continuation = downloadContinuation {
+            continuation.resume(returning: (location, downloadTask.response!))
+            downloadContinuation = nil
+        }
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
             print("Download error: \(error.localizedDescription)")
+            if let continuation = downloadContinuation {
+                continuation.resume(throwing: error)
+                downloadContinuation = nil
+            }
             Task { @MainActor in
                 downloadProgress = DownloadProgress(
                     progress: 0,
