@@ -43,34 +43,37 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     @Published var downloadProgress: DownloadProgress?
     @Published var isModelLoaded = false
     
-    private let baseURL = "https://api.baseweight.ai/api"
+    private let baseURL = "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF/resolve/main"
     private let modelsDirectory: URL
     private var currentDownloadTotalBytes: Int64 = 0
     private var currentDownloadBytesReceived: Int64 = 0
     
-    private let defaultModelName = "SmolVLM-2.2B-Instruct"
+    private let defaultModelName = "SmolVLM2-256M-Video-Instruct"
     private var manager: UnsafeMutableRawPointer?
     
     // List of available models
     let availableModels: [MTMDModelPair] = [
         MTMDModelPair(
-            name: "SmolVLM-2.2B-Instruct",
+            name: "SmolVLM2-256M-Video-Instruct",
             language: Model(
-                id: "8ccd519a-620a-4a1d-98ba-a9712a95a1b4",
-                name: "SmolVLM",
-                size: 1_927_933_984, // 1838.62 MB
+                id: "SmolVLM2-256M-Video-Instruct-Q8_0.gguf",
+                name: "SmolVLM2",
+                size: 175_056_352, // 175 MB
                 isDefault: true,
                 isLanguage: true
             ),
             vision: Model(
-                id: "e3e8315b-99cd-4ae5-8cc9-c8738ae8aa1e",
-                name: "SmolVLM",
-                size: 592_523_200, // 565.07 MB
+                id: "mmproj-SmolVLM2-256M-Video-Instruct-Q8_0.gguf",
+                name: "SmolVLM2",
+                size: 104_000_000, // 104 MB
                 isDefault: true,
                 isLanguage: false
             )
         )
     ]
+    
+    private var currentModelFile: URL?
+    private var currentModelSize: Int64 = 0
     
     override init() {
         // Get the documents directory
@@ -80,7 +83,12 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         super.init()
         
         // Create models directory if it doesn't exist
-        try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true, attributes: nil)
+            print("Models directory created/verified at: \(modelsDirectory.path)")
+        } catch {
+            print("Error creating models directory: \(error)")
+        }
         
         // Check if models are already loaded
         isModelLoaded = isModelPairDownloaded(modelName: defaultModelName)
@@ -135,7 +143,7 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         
         let queue = DispatchQueue(label: "NetworkMonitor")
         monitor.start(queue: queue)
-        _ = semaphore.wait(timeout: .now() + 1.0)
+        _ = semaphore.wait(timeout: .now() + 5.0) // Increase timeout to 5 seconds
         monitor.cancel()
         
         return isWiFi
@@ -257,6 +265,11 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
     }
     
+    // Add property to store the download continuation
+    private var downloadContinuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var downloadTask: URLSessionDownloadTask?
+    private var isDownloadComplete = false
+    
     private func downloadModel(_ modelId: String) async throws {
         print("Downloading model with ID: \(modelId)")
         guard let model = getModel(modelId: modelId) else {
@@ -265,109 +278,104 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
         
         let modelFile = getModelPath(modelId)
+        currentModelFile = modelFile
         
-        // Create parent directories if they don't exist
-        try? FileManager.default.createDirectory(at: modelFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Ensure models directory exists
+        do {
+            try FileManager.default.createDirectory(at: modelFile.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+            print("Verified models directory exists at: \(modelFile.deletingLastPathComponent().path)")
+        } catch {
+            print("Error creating models directory: \(error)")
+            throw NSError(domain: "ModelManager", code: 10, userInfo: [NSLocalizedDescriptionKey: "Failed to create models directory: \(error.localizedDescription)"])
+        }
         
         await MainActor.run {
             isDownloading = true
-            currentDownloadTotalBytes = model.size
-            currentDownloadBytesReceived = 0
-            downloadProgress = DownloadProgress(
-                progress: 0,
-                bytesDownloaded: 0,
-                totalBytes: model.size,
-                status: .pending,
-                message: "Requesting download URL..."
-            )
-        }
-        
-        // Get the pre-signed URL
-        let apiUrl = "\(baseURL)/models/\(modelId)/download"
-        print("Constructed API URL: \(apiUrl)")
-        guard let url = URL(string: apiUrl) else {
-            print("Failed to create URL from: \(apiUrl)")
-            throw NSError(domain: "ModelManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid API URL"])
-        }
-        
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(Config.apiKey)", forHTTPHeaderField: "Authorization")
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            print("Invalid response type: \(type(of: response))")
-            throw NSError(domain: "ModelManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "Invalid response type"])
-        }
-        
-        print("API Response Status: \(httpResponse.statusCode)")
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("API Response Body: \(responseString)")
-        }
-        
-        guard httpResponse.statusCode == 200 else {
-            throw NSError(domain: "ModelManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "API request failed with status \(httpResponse.statusCode)"])
-        }
-        
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let downloadUrl = json["download_url"] as? String,
-              let downloadURL = URL(string: downloadUrl) else {
-            throw NSError(domain: "ModelManager", code: 5, userInfo: [NSLocalizedDescriptionKey: "Invalid API response"])
-        }
-        
-        await MainActor.run {
+            isDownloadComplete = false
             downloadProgress = DownloadProgress(
                 progress: 0,
                 bytesDownloaded: 0,
                 totalBytes: model.size,
                 status: .downloading,
-                message: "Downloading model..."
+                message: "Starting download..."
             )
         }
         
-        // Create a URLSession with our delegate
-        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        // Construct direct download URL
+        let downloadURL = URL(string: "\(baseURL)/\(modelId)")!
+        print("Downloading from URL: \(downloadURL)")
+        
+        // Create a URLSession configuration with timeouts
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 300 // 5 minutes timeout for each chunk
+        config.timeoutIntervalForResource = 3600 // 1 hour total timeout
+        config.waitsForConnectivity = true
+        
+        // Create a URLSession with our delegate and configuration
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
+        
+        // Add a timeout task
+        let timeoutTask = Task {
+            try await Task.sleep(nanoseconds: 3600 * 1_000_000_000) // 1 hour timeout
+            session.invalidateAndCancel()
+            throw NSError(domain: "ModelManager", code: 8, userInfo: [NSLocalizedDescriptionKey: "Download timed out after 1 hour"])
+        }
         
         // Download the file using downloadTask
-        let (tempFileURL, downloadResponse) = try await session.download(from: downloadURL)
-        
-        guard let downloadHttpResponse = downloadResponse as? HTTPURLResponse, downloadHttpResponse.statusCode == 200 else {
-            throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Download failed"])
-        }
-        
-        // Move the downloaded file to our target location
-        try? FileManager.default.removeItem(at: modelFile) // Remove existing file if any
-        try FileManager.default.moveItem(at: tempFileURL, to: modelFile)
-        
-        // Verify file size
-        let attributes = try FileManager.default.attributesOfItem(atPath: modelFile.path)
-        let fileSize = attributes[.size] as? Int64 ?? 0
-        
-        print("File size verification:")
-        print("Expected size: \(model.size) bytes")
-        print("Actual size: \(fileSize) bytes")
-        
-        if fileSize != model.size {
-            print("Size mismatch! Difference: \(model.size - fileSize) bytes")
-            try? FileManager.default.removeItem(at: modelFile)
-            throw NSError(domain: "ModelManager", code: 7, userInfo: [NSLocalizedDescriptionKey: "Downloaded file size mismatch"])
-        }
-        
-        await MainActor.run {
-            downloadProgress = DownloadProgress(
-                progress: 100,
-                bytesDownloaded: model.size,
-                totalBytes: model.size,
-                status: .completed,
-                message: "Download completed"
-            )
-            isDownloading = false
+        do {
+            print("Starting download task...")
+            downloadTask = session.downloadTask(with: downloadURL)
+            print("Created download task: \(String(describing: downloadTask))")
+            downloadTask?.resume()
+            print("Resumed download task")
+            
+            // Wait for the download to complete using async/await
+            let (finalFileURL, downloadResponse) = try await withCheckedThrowingContinuation { continuation in
+                self.downloadContinuation = continuation
+            }
+            
+            print("Download continuation completed")
+            print("Final file URL: \(finalFileURL)")
+            print("Download response: \(downloadResponse)")
+            
+            timeoutTask.cancel() // Cancel timeout task if download completes
+            
+            print("Download completed, verifying response...")
+            guard let downloadHttpResponse = downloadResponse as? HTTPURLResponse, downloadHttpResponse.statusCode == 200 else {
+                throw NSError(domain: "ModelManager", code: 6, userInfo: [NSLocalizedDescriptionKey: "Download failed"])
+            }
+            
+            await MainActor.run {
+                downloadProgress = DownloadProgress(
+                    progress: 100,
+                    bytesDownloaded: model.size,
+                    totalBytes: model.size,
+                    status: .completed,
+                    message: "Download completed"
+                )
+                isDownloading = false
+                isDownloadComplete = true
+            }
+            
+            // Clear the current model file reference
+            currentModelFile = nil
+            
+        } catch {
+            print("Download error: \(error)")
+            timeoutTask.cancel() // Cancel timeout task if error occurs
+            session.invalidateAndCancel()
+            
+            // Clear the current model file reference
+            currentModelFile = nil
+            
+            throw error
         }
     }
     
     // MARK: - URLSessionDownloadDelegate
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        print("Download progress: \(totalBytesWritten)/\(totalBytesExpectedToWrite) bytes")
         Task { @MainActor in
             currentDownloadBytesReceived = totalBytesWritten
             let progress = Int((Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)) * 100)
@@ -383,11 +391,58 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         print("Download finished to: \(location)")
+        print("Download task state: \(downloadTask.state.rawValue)")
+        print("Download task response: \(String(describing: downloadTask.response))")
+        print("Download task error: \(String(describing: downloadTask.error))")
+        
+        // Immediately copy the file to our target location
+        if let modelFile = currentModelFile {
+            do {
+                print("Immediately copying file from \(location.path) to \(modelFile.path)")
+                
+                // Remove existing file if it exists
+                if FileManager.default.fileExists(atPath: modelFile.path) {
+                    try FileManager.default.removeItem(at: modelFile)
+                }
+                
+                // Copy the file
+                try FileManager.default.copyItem(at: location, to: modelFile)
+                print("File copied successfully")
+                isDownloadComplete = true
+                if let continuation = downloadContinuation {
+                    continuation.resume(returning: (modelFile, downloadTask.response!))
+                    downloadContinuation = nil
+                }
+            } catch {
+                print("Error copying file: \(error)")
+                if let continuation = downloadContinuation {
+                    continuation.resume(throwing: error)
+                    downloadContinuation = nil
+                }
+            }
+        } else {
+            print("Error: No target model file URL set")
+            if let continuation = downloadContinuation {
+                continuation.resume(throwing: NSError(domain: "ModelManager", code: 16, userInfo: [NSLocalizedDescriptionKey: "No target model file URL set"]))
+                downloadContinuation = nil
+            }
+        }
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
             print("Download error: \(error.localizedDescription)")
+            print("Task state: \(task.state.rawValue)")
+            print("Task response: \(String(describing: task.response))")
+            
+            if let downloadTask = task as? URLSessionDownloadTask {
+                print("Download task error: \(String(describing: downloadTask.error))")
+            }
+            
+            if let continuation = downloadContinuation {
+                continuation.resume(throwing: error)
+                downloadContinuation = nil
+            }
             Task { @MainActor in
                 downloadProgress = DownloadProgress(
                     progress: 0,
@@ -397,6 +452,7 @@ class ModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     message: "Download failed: \(error.localizedDescription)"
                 )
                 isDownloading = false
+                isDownloadComplete = false
             }
         }
     }
